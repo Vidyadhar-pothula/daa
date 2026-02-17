@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/vidyadhar/Downloads/Duel-of-Labyrinth-main/main.py", line 1717, in <module>
+    game.run()
+  File "/Users/vidyadhar/Downloads/Duel-of-Labyrinth-main/main.py", line 1711, in run
+    sys.exit()
+SystemExit
+
+Exception: 
