@@ -71,6 +71,156 @@ h(n) = |n.x - goal.x| + |n.y - goal.y|
 h(n) = max(|n.x - goal.x|, |n.y - goal.y|)
 ```
 
+## 🧮 Algorithms Used in This Project
+
+### 1. Pathfinding & Search Algorithms
+
+#### A* (A-Star) Search
+- **Purpose**: Optimal pathfinding with heuristic guidance
+- **Use Case**: Calculating optimal path cost for efficiency comparison
+- **Files**: `AStar/astar.py`, `game_classes.py`
+- **Complexity**: O(b^d) where b=branching factor, d=depth
+- **Key Feature**: Balances actual cost (g) + estimated cost (h) for optimality
+
+#### Breadth-First Search (BFS)
+- **Purpose**: Unweighted shortest path, structural analysis
+- **Use Case**: Distance map generation from goal node
+- **Files**: `BFS/bfs.py`, `game_classes.py`
+- **Complexity**: O(V + E) where V=vertices, E=edges
+- **Key Feature**: Guarantees shortest path in unweighted graphs
+
+#### Depth-First Search (DFS)
+- **Purpose**: Maze generation via recursive backtracking
+- **Use Case**: Creating perfect mazes (no loops, fully connected)
+- **Files**: `DFS/dfs.py`, `game_classes.py`
+- **Complexity**: O(V + E)
+- **Key Feature**: Explores as deep as possible before backtracking
+
+#### Greedy Best-First Search (GBFS) - 3 Variants
+- **Purpose**: Fast heuristic-driven pathfinding
+- **Use Case**: AI opponent in main gameplay
+- **Files**: `GBFS/Euclidean/euclidean.py`, `GBFS/Manhattan/manhattan.py`, `GBFS/chebyshev/chebyshev.py`
+- **Variants**:
+  - **Euclidean**: √[(x₁-x₂)² + (y₁-y₂)²] - Best for open spaces
+  - **Manhattan**: |x₁-x₂| + |y₁-y₂| - Best for grid movement
+  - **Chebyshev**: max(|x₁-x₂|, |y₁-y₂|) - Best for diagonal movement
+- **Complexity**: O(b^d)
+- **Key Feature**: Fast but not guaranteed to find optimal path
+
+#### Hill Climbing (Pure Greedy)
+- **Purpose**: Demonstrate limitations of greedy without backtracking
+- **Use Case**: Educational comparison in simulation mode
+- **Files**: `HillClimbing/hill_climbing.py`
+- **Complexity**: O(n)
+- **Key Feature**: Can get stuck in local minima (dead ends)
+
+#### Dijkstra's Algorithm
+- **Purpose**: Optimal pathfinding considering edge weights
+- **Use Case**: Alternative optimal path calculation
+- **Files**: `game_classes.py`
+- **Complexity**: O((V + E) log V) with priority queue
+- **Key Feature**: Guarantees shortest weighted path
+
+### 2. Dynamic Programming (DP)
+
+#### DP Cost Calculation
+- **Purpose**: Pre-compute optimal cost from any node to goal
+- **Use Case**: Circular maze pathfinding, visualization
+- **Files**: `circular_maze.py`, `main.py`
+- **Complexity**: O(V + E)
+- **Key Feature**: Enables K key DP visualization (static glow)
+
+#### DP Simulation Animation
+- **Purpose**: Visualize DP computation process
+- **Use Case**: Educational demonstration of DP wave propagation
+- **Files**: `main.py:draw_dp_simulation()`
+- **Key Feature**: J key triggers animated wave from center showing cost discovery
+
+### 3. Graph Algorithms
+
+#### Tarjan's Algorithm
+- **Purpose**: Find articulation points (cut vertices) in graph
+- **Use Case**: Identify critical nodes that divide maze into regions
+- **Files**: `algorithm_visualizer.py:TarjanVisualizer`, `region_logic.py`, `dynamic_maze.py`
+- **Complexity**: O(V + E)
+- **Key Features**:
+  - Single DFS traversal
+  - Tracks discovery time and low-link values
+  - Identifies bridge nodes for region division
+
+#### Flood Fill (BFS-based)
+- **Purpose**: Region coloring and partition
+- **Use Case**: Divide maze into distinct regions using articulation points
+- **Files**: `algorithm_visualizer.py:RegionVisualizer`, `region_logic.py`
+- **Complexity**: O(V)
+- **Key Feature**: Colors connected components respecting articulation point boundaries
+
+### 4. Divide & Conquer
+
+#### Hierarchical Pathfinding
+- **Purpose**: Break large pathfinding into smaller regional problems
+- **Use Case**: Efficient navigation in complex mazes
+- **Files**: `game_classes.py:HierarchicalAI`, `algorithm_visualizer.py:ConquerVisualizer`
+- **Approach**:
+  1. **Divide**: Use Tarjan to find articulation points
+  2. **Partition**: Use Flood Fill to create regions
+  3. **Plan**: Find high-level path through regions
+  4. **Conquer**: Solve each regional path individually
+- **Complexity**: O(R × (V/R + E/R)) where R=regions
+- **Key Feature**: Reduces complexity for large mazes
+
+### 5. Compression Algorithm
+
+#### Huffman Coding
+- **Purpose**: Data compression of movement history
+- **Use Case**: Post-game analysis showing compressed representation
+- **Files**: `Huffman/huffman.py`
+- **Complexity**: O(n log n) for tree building
+- **Key Features**:
+  - Variable-length encoding
+  - Frequency-based optimization
+  - Demonstrates greedy compression strategy
+
+### 6. Circular Maze Algorithms
+
+#### Polar Grid Generation
+- **Purpose**: Create circular maze structure
+- **Use Case**: Unique maze topology with rotational mechanics
+- **Files**: `circular_maze.py`
+- **Features**:
+  - Polar coordinate system (ring, sector)
+  - Alignment-based connectivity
+  - Rotation offsets per ring
+
+#### Recursive Backtracker (Polar)
+- **Purpose**: Generate circular labyrinth
+- **Use Case**: Carve corridors in polar grid
+- **Files**: `circular_maze.py:generate_maze_structure()`
+- **Complexity**: O(V)
+- **Key Feature**: Adapted DFS for polar coordinates
+
+---
+
+## 📊 Algorithm Summary Table
+
+| Algorithm | Category | Time Complexity | Optimal | Complete |
+|-----------|----------|----------------|---------|----------|
+| A* | Pathfinding | O(b^d) | ✅ Yes | ✅ Yes |
+| BFS | Pathfinding | O(V+E) | ✅ Unweighted | ✅ Yes |
+| DFS | Generation/Search | O(V+E) | ❌ No | ✅ Yes |
+| GBFS (all variants) | Pathfinding | O(b^d) | ❌ No | ✅ Yes |
+| Dijkstra | Pathfinding | O((V+E)logV) | ✅ Yes | ✅ Yes |
+| Hill Climbing | Pathfinding | O(n) | ❌ No | ❌ No |
+| Dynamic Programming | Optimization | O(V+E) | ✅ Yes | ✅ Yes |
+| Tarjan's | Graph Analysis | O(V+E) | ✅ Yes | ✅ Yes |
+| Flood Fill | Partitioning | O(V) | ✅ Yes | ✅ Yes |
+| Hierarchical | Divide & Conquer | O(R×V/R) | ~80-90% | ✅ Yes |
+| Huffman | Compression | O(n log n) | ✅ Yes | ✅ Yes |
+
+**Legend**: V=vertices, E=edges, b=branching factor, d=depth, R=regions
+
+
+
 ## 🚀 Installation
 
 ### Requirements
