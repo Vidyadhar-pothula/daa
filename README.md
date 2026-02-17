@@ -6,7 +6,8 @@
 
 A maze exploration game where you compete against a Greedy Best-First Search AI.
 
-**[View Algorithm Implementations (Code Reference)](ALGORITHMS.md)**
+**[View Algorithm Implementations (Code Reference)](ALGORITHMS.md)**  
+**[📝 Algorithm Code Examples (Copy-Paste Ready)](ALGORITHM_CODE.md)**
 
 ## 🎯 Features
 
