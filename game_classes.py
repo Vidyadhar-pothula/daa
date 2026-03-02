@@ -102,13 +102,14 @@ class PerformanceMetrics:
 
 class Maze:
     """Graph-based maze with enhanced features"""
-    def __init__(self, grid_layout=None, width=10, height=10, seed=None):
+    def __init__(self, grid_layout=None, width=10, height=10, seed=None, maze_type="STRUCTURED"):
         self.grid = []
         self.start_node = None
         self.goal_node = None
         self.width = 0
         self.height = 0
         self.seed = seed or random.randint(0, 999999)
+        self.maze_type = maze_type
         
         # Graph structure representation
         self.adjacency_list = {}  # node -> [(neighbor, edge_weight)]
@@ -166,11 +167,29 @@ class Maze:
         self.grid[0][0].type = '.'
         self.grid[0][0].cost = 1
         
+        last_dir = None
+        
         while stack:
             current_r, current_c = stack[-1]
             
             directions = [(-2, 0), (2, 0), (0, -2), (0, 2)]
-            random.shuffle(directions)
+            
+            # Directional Bias for BACKTRACKING to create long corridors
+            # Bias removed for BACKTRACKING to enforce a 100% natural sprawling tree.
+            bias_chance = 0.0 if self.maze_type == "BACKTRACKING" else 0.70
+            
+            if last_dir and random.random() < bias_chance:
+                if last_dir in directions:
+                    directions.remove(last_dir)
+                    directions.insert(0, last_dir)
+                    # Shuffle the rest
+                    rest_dirs = directions[1:]
+                    random.shuffle(rest_dirs)
+                    directions = [last_dir] + rest_dirs
+                else:
+                    random.shuffle(directions)
+            else:
+                random.shuffle(directions)
             
             found_next = False
             for dr, dc in directions:
@@ -185,36 +204,81 @@ class Maze:
                     
                     visited.add((nr, nc))
                     stack.append((nr, nc))
+                    last_dir = (dr, dc)
                     found_next = True
                     break
             
             if not found_next:
                 stack.pop()
+                last_dir = None
         
-        # Set start and goal
+        # Set start node
         self.start_node = self.grid[0][0]
         self.start_node.type = 'S'
         self.start_node.cost = 0
         
-        self.goal_node = self.grid[height-1][width-1]
-        self.goal_node.type = 'G'
-        self.goal_node.cost = 1
-        
-        # Ensure goal is reachable
-        if self.goal_node.type == '#':
+        if self.maze_type == "BACKTRACKING":
+            # Dynamic Goal Placement: Find the furthest node from start via Simulated DFS
+            # This ensures the AI naturally avoids finding the goal until the graph is mostly tapped.
+            stack = [self.start_node]
+            visited_dfs = {self.start_node}
+            visitation_order = []
+            
+            while stack:
+                curr_node = stack.pop()
+                visitation_order.append(curr_node)
+                
+                # Fetch valid cardinal neighbors built during generation
+                valid_neighbors = []
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nr, nc = curr_node.r + dr, curr_node.c + dc
+                    if 0 <= nr < height and 0 <= nc < width:
+                        neighbor = self.grid[nr][nc]
+                        if neighbor.type != '#' and neighbor not in visited_dfs:
+                            valid_neighbors.append(neighbor)
+                
+                # Shuffle so placement is random but strictly depth-forced
+                random.shuffle(valid_neighbors)
+                for neighbor in valid_neighbors:
+                    visited_dfs.add(neighbor)
+                    stack.append(neighbor)
+            
+            # Pick a node from the final 10% of the DFS sequence
+            pool_start = max(1, int(len(visitation_order) * 0.90))
+            if pool_start >= len(visitation_order):
+                farthest_node = visitation_order[-1]
+            else:
+                farthest_node = random.choice(visitation_order[pool_start:])
+            
+            self.goal_node = farthest_node
             self.goal_node.type = 'G'
-            for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
-                nr, nc = height-1+dr, width-1+dc
-                if 0 <= nr < height and 0 <= nc < width:
-                    self.grid[nr][nc].type = '.'
-                    self.grid[nr][nc].cost = 1
+            self.goal_node.cost = 1
+        else:
+            # Traditional placement for STRUCTURED mazes
+            self.goal_node = self.grid[height-1][width-1]
+            self.goal_node.type = 'G'
+            self.goal_node.cost = 1
+            
+            # Ensure goal is reachable
+            if self.goal_node.type == '#':
+                self.goal_node.type = 'G'
+                for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
+                    nr, nc = height-1+dr, width-1+dc
+                    if 0 <= nr < height and 0 <= nc < width:
+                        self.grid[nr][nc].type = '.'
+                        self.grid[nr][nc].cost = 1
         
-                # Add loops (increase graph connectivity)
+        # Add loops based on maze type to create false shortcuts
+        if self.maze_type == "STRUCTURED":
+            loop_prob = 0.20 # High connectivity
+        elif self.maze_type == "BACKTRACKING":
+            loop_prob = 0.0 # Strictly tree-like for max dead ends; NO shortcuts
+        else:
+            loop_prob = 0.10
+            
         for r in range(1, height-1):
             for c in range(1, width-1):
-                # Increased loop probability to 10% to create more cycles
-                # This reduces the number of Articulation Points, making them more significant
-                if self.grid[r][c].type == '#' and random.random() < 0.10:
+                if self.grid[r][c].type == '#' and random.random() < loop_prob:
                     open_neighbors = sum(1 for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]
                                        if self.grid[r+dr][c+dc].type != '#')
                     if open_neighbors >= 2:
@@ -256,11 +320,13 @@ class Maze:
     def get_neighbors(self, node):
         """Get all neighbors (graph adjacency)"""
         neighbors = []
-        # 8 directions for richer graph connectivity
-        directions = [
-            (-1, 0), (1, 0), (0, -1), (0, 1),  # Cardinals
-            (-1, -1), (-1, 1), (1, -1), (1, 1)  # Diagonals
-        ]
+        
+        # Base Cardinals
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        
+        # Only allow Diagonals if NOT a pure Backtracking stress-test
+        if self.maze_type != "BACKTRACKING":
+             directions.extend([(-1, -1), (-1, 1), (1, -1), (1, 1)])
         
         for dr, dc in directions:
             nr, nc = node.r + dr, node.c + dc
@@ -271,7 +337,8 @@ class Maze:
     
     def heuristic(self, node, heuristic_type='euclidean'):
         """Calculate heuristic for greedy algorithm"""
-        # Enforce Euclidean only
+        if heuristic_type == 'manhattan':
+            return abs(node.r - self.goal_node.r) + abs(node.c - self.goal_node.c)
         return math.sqrt((node.r - self.goal_node.r)**2 + (node.c - self.goal_node.c)**2)
     
     def calculate_optimal_path(self):
@@ -489,6 +556,7 @@ class GreedyAI:
         self.full_path = []
         self.path_index = 0
         self.action_log = ""
+        self.use_backtracking = True # Default to True
         
         # Enhanced metrics
         self.metrics = PerformanceMetrics()
@@ -503,7 +571,7 @@ class GreedyAI:
         self.path_index = 0
         self.finished = False
         
-        if self.algorithm_type == 'hill_climbing':
+        if not self.use_backtracking:
             self.compute_path_hill_climbing()
         else:
             self.compute_path_best_first()
