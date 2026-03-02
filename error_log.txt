@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/vidyadhar/Desktop/daa_main /daa/main.py", line 1815, in <module>
+    game.run()
+  File "/Users/vidyadhar/Desktop/daa_main /daa/main.py", line 1809, in run
+    sys.exit()
+SystemExit
+
+Exception: 
