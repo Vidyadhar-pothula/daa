@@ -93,6 +93,16 @@ class GameController:
         self.scrollbar_grabbed = False
         self.last_move_time = 0
 
+        # Initialize UI Component
+        fonts_dict = {
+            'small': self.small_font,
+            'medium': self.medium_font,
+            'large': self.large_font,
+            'mono': self.mono_font,
+            'font': self.font
+        }
+        self.analysis_ui = AnalysisUI(self.screen, fonts_dict)
+
         self.reset_game("MEDIUM") # Default back to MEDIUM
 
     def draw_text(self, text, font, color, pos, anchor="center", shadow=True):
@@ -1308,7 +1318,7 @@ class GameController:
                 self.draw_text("Press F to Toggle Mode", self.small_font, (150, 150, 150), (w//2, 45), shadow=True)
             
             # Backtracking Metrics Panel
-            metrics = self.dfs_sim.get_metrics()
+            metrics = self.dfs_sim.get_final_statistics()
             pygame.draw.rect(self.screen, (20, 20, 25, 200), (20, 50, 250, 110), border_radius=5)
             self.draw_text(f"Backtracks: {metrics['backtracks']}", self.small_font, (200, 200, 200), (30, 60), anchor="topleft", shadow=False)
             self.draw_text(f"Dead Ends Encountered: {metrics['dead_ends']}", self.small_font, (200, 200, 200), (30, 85), anchor="topleft", shadow=False)
