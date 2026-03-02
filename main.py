@@ -17,7 +17,9 @@ from AStar.astar import AStarAI
 from circular_maze import CircularMaze
 
 from algorithm_visualizer import TarjanVisualizer, RegionVisualizer, ConquerVisualizer
-from dfs_simulator import DFSSimulator
+from backtracking_engine import BacktrackingEngine
+from complexity_engine import ComplexityEngine
+from analysis_ui import AnalysisUI
 
 # UI States
 MENU = 0
@@ -1169,7 +1171,8 @@ class GameController:
 
     def prepare_simulation(self):
         print("Preparing DFSSimulator...")
-        self.dfs_sim = DFSSimulator(self.maze.start_node, self.maze.goal_node, self.maze)
+        self.dfs_sim = BacktrackingEngine(self.maze.start_node, self.maze.goal_node, self.maze)
+        self.dfs_sim.full_exploration_mode = getattr(self, 'full_exploration_mode', False)
         self.sim_start_time = time.time()
         self.sim_speed = "Slow" # Slow, Normal, Fast
         self.sim_last_step = time.time()
@@ -1288,17 +1291,10 @@ class GameController:
 
         # Draw Current Node
         if self.dfs_sim.current_node:
-            cx, cy = self.dfs_sim.current_node.c * TILE_SIZE + TILE_SIZE//2, self.dfs_sim.current_node.r * TILE_SIZE + TILE_SIZE//2 + GRID_OFFSET_Y
-            if self.dfs_sim.state == "DEAD_END":
-                 # Flash red pulse
-                 pulse = int(abs(math.sin(time.time() * 10)) * 255)
-                 pygame.draw.circle(self.screen, (pulse, 0, 0), (cx, cy), TILE_SIZE//2 + 4)
-                 self.draw_text("Dead End Reached", self.small_font, (255, 100, 100), (cx, cy - TILE_SIZE), shadow=True)
-                 # Dark red circle with X
-                 pygame.draw.circle(self.screen, (100, 0, 0), (cx, cy), TILE_SIZE//2)
-                 pygame.draw.line(self.screen, (255, 255, 255), (cx-5, cy-5), (cx+5, cy+5), 2)
-                 pygame.draw.line(self.screen, (255, 255, 255), (cx-5, cy+5), (cx+5, cy-5), 2)
-            else:
+            self.analysis_ui.draw_dead_end_flash(self.dfs_sim.current_node, self.dfs_sim.state, GRID_OFFSET_Y, TILE_SIZE)
+            
+            if self.dfs_sim.state != "DEAD_END":
+                 cx, cy = self.dfs_sim.current_node.c * TILE_SIZE + TILE_SIZE//2, self.dfs_sim.current_node.r * TILE_SIZE + TILE_SIZE//2 + GRID_OFFSET_Y
                  pygame.draw.circle(self.screen, (0, 255, 255), (cx, cy), TILE_SIZE//2)
 
         # 4. Minimal UI Panels
@@ -1325,32 +1321,7 @@ class GameController:
             self.draw_text(f"Speed: {self.sim_speed} (1/2/3 to change)", self.small_font, (200, 200, 200), speed_rect.center, shadow=False)
             
             # B. Right Side Minimal Stack Box
-            stack_w = 120
-            stack_x = w - stack_w - 20
-            stack_y = 80
-            stack_h = min(400, h - 200)
-            
-            pygame.draw.rect(self.screen, (20, 20, 25, 200), (stack_x, stack_y, stack_w, stack_h))
-            self.draw_text("AI Stack", self.medium_font, (150, 200, 255), (stack_x + stack_w//2, stack_y + 20), shadow=False)
-            
-            # Render stack elements (top to bottom, up to capacity)
-            sy = stack_y + 50
-            display_limit = (stack_h - 60) // 25
-            # Show top N items
-            visible_stack = list(reversed(self.dfs_sim.stack))[:display_limit]
-            
-            for idx, (node, _) in enumerate(visible_stack):
-                text = f"[ ({node.r}, {node.c}) ]"
-                # Target backtrack pop element fading out by color shifting if we are popping
-                color = (150, 255, 150) if idx == 0 and self.dfs_sim.state != "BACKTRACK" else (180, 180, 180)
-                y_offset = 0
-                
-                if idx == 0 and self.dfs_sim.state == "BACKTRACK":
-                     color = (255, 80, 80) # Strong Red fade out intent
-                     y_offset = 12 # Slide down animation slightly
-                     
-                self.draw_text(text, self.small_font, color, (stack_x + stack_w//2, sy + y_offset), shadow=False)
-                sy += 25
+            self.analysis_ui.draw_ai_stack(self.dfs_sim.stack, self.dfs_sim.state, w, h)
                 
             # C. Decision Log (Bottom Slim Bar)
             log_h = 40
@@ -1386,9 +1357,29 @@ class GameController:
             print(f"Error in step update: {e}")
             
         if getattr(self, 'show_analysis_mode', False):
-            self.draw_analysis_panel(game_w, w, h)
+            metrics = self.dfs_sim.history_metrics
+            current_metric = self.analysis_metric
+            metric_titles = {
+                "nodes": "Cumulative Nodes Explored",
+                "runtime": "Cumulative Runtime (ms)",
+                "backtracks": "Total Backtracks",
+                "stack_depth": "AI Working Stack Depth"
+            }
+            self.analysis_ui.draw_live_analysis_graph(game_w, w, h, metrics, current_metric, metric_titles)
+            
+            if self.dfs_sim.state == "FINISHED":
+                badge_rect = pygame.Rect(0, 0, 300, 45)
+                badge_rect.center = (game_w + (w-game_w)//2, h - 80)
+                pygame.draw.rect(self.screen, (30, 150, 60), badge_rect, border_radius=5)
+                self.draw_text("Simulation Complete", self.medium_font, (255, 255, 255), badge_rect.center, shadow=False)
+                
         elif getattr(self, 'show_complexity_mode', False):
-            self.draw_complexity_panel(game_w, w, h)
+            metrics = self.dfs_sim.history_metrics
+            highlight_index = getattr(self, 'complexity_highlight_index', 0)
+            comp_engine = ComplexityEngine(self.maze, metrics)
+            report = comp_engine.generate_complexity_report()
+            
+            self.analysis_ui.draw_complexity_comparison_panel(game_w, w, h, report, metrics, highlight_index)
             
         # Draw floating temp warning msg if any
         if getattr(self, 'temp_msg', ""):
@@ -1398,271 +1389,6 @@ class GameController:
                 self.draw_text(self.temp_msg, self.medium_font, (255, 100, 100), (w//2, 40), shadow=False)
             else:
                 self.temp_msg = ""
-
-    def draw_analysis_panel(self, x_start, w, h):
-        """Draws the live runtime analysis graph on the right 45% of the screen"""
-        # Panel Background (100% Solid White Surface Blit)
-        analysis_w = w - x_start
-        analysis_surface = pygame.Surface((analysis_w, h))
-        analysis_surface.fill((255, 255, 255))
-        self.screen.blit(analysis_surface, (x_start, 0))
-        
-        panel_rect = pygame.Rect(x_start, 0, analysis_w, h)
-        pygame.draw.rect(self.screen, (150, 150, 150), panel_rect, 2) # Clean Granite Border
-        
-        # Title & State
-        margin = 40
-        self.draw_text("ANALYSIS MODE ACTIVE", self.small_font, (255, 0, 0), (x_start + analysis_w - 90, 20), shadow=False)
-        self.draw_text("Live Runtime Analysis", self.heading_font, (0, 0, 0), (x_start + (w-x_start)//2, margin), shadow=False)
-        
-        metric_titles = {
-            "nodes": "Nodes Explored",
-            "runtime": "Cumulative Runtime (ms)",
-            "stack_depth": "Deeper AI Stack",
-            "backtracks": "Total Backtracks"
-        }
-        current_metric = getattr(self, 'analysis_metric', 'nodes')
-        self.draw_text(f"Tracking: {metric_titles.get(current_metric, current_metric)} (Press 1-4 to change)", self.medium_font, (40, 40, 40), (x_start + (w-x_start)//2, margin + 40), shadow=False)
-        
-        metrics = self.dfs_sim.history_metrics
-        if not metrics:
-            self.draw_text("Waiting for simulation to begin...", self.medium_font, (100, 100, 100), (x_start + (w-x_start)//2, h//2), shadow=False)
-            return
-            
-        # Live Stats Block (Secondary Metrics)
-        last_snap = metrics[-1]
-        stats_h = 170
-        stats_y = h - stats_h - margin
-        stats_x = x_start + margin
-        
-        # Clean background-less stats box for professional academic look
-        self.draw_text("LIVE METRICS", self.large_font, (0, 0, 0), (stats_x, stats_y), anchor="topleft", shadow=False)
-        pygame.draw.line(self.screen, (150, 150, 150), (stats_x, stats_y + 35), (w - margin, stats_y + 35), 2)
-        
-        # Monospaced columnar rendering (Pure Black/Dark Text)
-        row_space = 25
-        self.draw_text("Steps:",          self.mono_font, (40, 40, 40), (stats_x, stats_y + 50), anchor="topleft", shadow=False)
-        self.draw_text(f"{last_snap['step']}",          self.mono_font, (0, 0, 0),  (stats_x + 200, stats_y + 50), anchor="topleft", shadow=False)
-        
-        self.draw_text("Nodes Explored:", self.mono_font, (40, 40, 40), (stats_x, stats_y + 50 + row_space), anchor="topleft", shadow=False)
-        self.draw_text(f"{last_snap['nodes']}",         self.mono_font, (0, 0, 0),  (stats_x + 200, stats_y + 50 + row_space), anchor="topleft", shadow=False)
-        
-        self.draw_text("Backtracks:",     self.mono_font, (40, 40, 40), (stats_x, stats_y + 50 + row_space*2), anchor="topleft", shadow=False)
-        self.draw_text(f"{last_snap['backtracks']}",    self.mono_font, (0, 0, 0),  (stats_x + 200, stats_y + 50 + row_space*2), anchor="topleft", shadow=False)
-        
-        self.draw_text("Stack Depth:",    self.mono_font, (40, 40, 40), (stats_x, stats_y + 50 + row_space*3), anchor="topleft", shadow=False)
-        self.draw_text(f"{last_snap['stack_depth']}",   self.mono_font, (0, 0, 0),  (stats_x + 200, stats_y + 50 + row_space*3), anchor="topleft", shadow=False)
-        
-        self.draw_text("Runtime (ms):",   self.mono_font, (40, 40, 40), (stats_x, stats_y + 50 + row_space*4), anchor="topleft", shadow=False)
-        self.draw_text(f"{last_snap['runtime']:.1f}",   self.mono_font, (0, 0, 0),  (stats_x + 200, stats_y + 50 + row_space*4), anchor="topleft", shadow=False)
-        
-        # Graph Configuration
-        graph_x = x_start + margin + 10
-        graph_y = margin + 100
-        graph_w = (w - x_start) - margin * 2 - 20
-        graph_h = stats_y - graph_y - 40
-        
-        # Draw Base Axes
-        pygame.draw.line(self.screen, (100, 100, 100), (graph_x, graph_y - 20), (graph_x, graph_y + graph_h), 2) # Y-Axis
-        pygame.draw.line(self.screen, (100, 100, 100), (graph_x, graph_y + graph_h), (graph_x + graph_w + 20, graph_y + graph_h), 2) # X-Axis
-        
-        self.draw_text(metric_titles[current_metric], self.medium_font, (100, 100, 100), (graph_x + 10, graph_y - 20), anchor="topleft", shadow=False)
-        self.draw_text("Step Count", self.medium_font, (100, 100, 100), (graph_x + graph_w - 80, graph_y + graph_h + 15), anchor="topleft", shadow=False)
-        
-        if len(metrics) < 2:
-            return # Need at least 2 points to draw a connected line
-            
-        # Find Scales
-        max_step = metrics[-1]['step']
-        max_y = max(m[current_metric] for m in metrics)
-        if max_y == 0: max_y = 1 # Avoid div zero
-        
-        # Grid lines (Subtle)
-        for i in range(1, 5):
-            gy = graph_y + graph_h - (i/5) * graph_h
-            pygame.draw.line(self.screen, (220, 220, 220), (graph_x, gy), (graph_x + graph_w, gy), 1)
-        
-        # Plot Data
-        points = []
-        for m in metrics:
-            px = graph_x + (m['step'] / max_step) * graph_w
-            py = graph_y + graph_h - (m[current_metric] / max_y) * graph_h
-            points.append((px, py))
-            
-            # Layered Backtrack highlight
-            if m['state'] == "BACKTRACK":
-                pygame.draw.circle(self.screen, (255, 150, 150, 150), (int(px), int(py)), 8) # Red glow base
-                pygame.draw.circle(self.screen, (220, 30, 30), (int(px), int(py)), 4) # Solid core
-                
-        # Connect Dots with anti-aliasing approximation (thick lines)
-        if len(points) >= 2:
-            pygame.draw.lines(self.screen, (30, 80, 200), False, points, 4)
-            
-        # Draw Termination Overlay (Cleanly mapped BELOW X-axis line)
-        if self.dfs_sim.state == "FINISHED":
-            badge_rect = pygame.Rect(0, 0, 300, 45)
-            badge_rect.center = (graph_x + graph_w//2, graph_y + graph_h + 50)
-            pygame.draw.rect(self.screen, (30, 150, 60), badge_rect, border_radius=5)
-            self.draw_text("Simulation Complete", self.medium_font, (255, 255, 255), badge_rect.center, shadow=False)
-
-    def draw_complexity_panel(self, x_start, w, h):
-        """Draws the visual complexity research view on the right side"""
-        # Panel Background (100% Solid White Surface Blit)
-        analysis_w = w - x_start
-        analysis_surface = pygame.Surface((analysis_w, h))
-        analysis_surface.fill((255, 255, 255))
-        self.screen.blit(analysis_surface, (x_start, 0))
-        
-        panel_rect = pygame.Rect(x_start, 0, analysis_w, h)
-        pygame.draw.rect(self.screen, (150, 150, 150), panel_rect, 2) # Clean Granite Border
-        
-        metrics = self.dfs_sim.history_metrics
-        if not metrics:
-            self.draw_text("No Data Available...", self.medium_font, (100, 100, 100), (x_start + analysis_w//2, h//2), shadow=False)
-            return
-            
-        last_snap = metrics[-1]
-        
-        # Determine the number of backtrack nodes
-        bt_events = [m for m in metrics if m.get('state') == 'BACKTRACK']
-        total_backtracks = getattr(last_snap, 'backtracks', len(bt_events))
-        
-        # Top Header
-        margin_x = 30
-        cursor_y = 30
-        
-        self.draw_text("COMPLEXITY COMPARISON MODE", self.large_font, (20, 20, 150), (x_start + analysis_w//2, cursor_y), shadow=False)
-        self.draw_text("Use LEFT/RIGHT arrows to step through red backtracks", self.small_font, (100, 100, 100), (x_start + analysis_w//2, cursor_y + 25), shadow=False)
-        pygame.draw.line(self.screen, (200, 200, 200), (x_start + margin_x, cursor_y + 40), (w - margin_x, cursor_y + 40), 2)
-        
-        cursor_y += 60
-        
-        # 1. LIVE STATS / WHAT HAPPENED IN GAME
-        self.draw_text("1. What Happened In-Game", self.medium_font, (0, 0, 0), (x_start + margin_x, cursor_y), anchor="topleft", shadow=False)
-        cursor_y += 25
-        
-        # Grid stats column
-        col1_x = x_start + margin_x
-        col2_x = x_start + margin_x + 200
-        row_h = 22
-        
-        self.draw_text("Total Steps Taken:", self.mono_font, (40, 40, 40), (col1_x, cursor_y), anchor="topleft", shadow=False)
-        self.draw_text(f"{last_snap['step']}", self.mono_font, (0, 0, 0), (col2_x, cursor_y), anchor="topleft", shadow=False)
-        cursor_y += row_h
-        
-        self.draw_text("Nodes Explored:", self.mono_font, (40, 40, 40), (col1_x, cursor_y), anchor="topleft", shadow=False)
-        self.draw_text(f"{last_snap['nodes']}", self.mono_font, (0, 0, 0), (col2_x, cursor_y), anchor="topleft", shadow=False)
-        cursor_y += row_h
-        
-        self.draw_text("Backtracks:", self.mono_font, (40, 40, 40), (col1_x, cursor_y), anchor="topleft", shadow=False)
-        self.draw_text(f"{total_backtracks}", self.mono_font, (200, 0, 0), (col2_x, cursor_y), anchor="topleft", shadow=False)
-        cursor_y += row_h
-        
-        n_val = max(self.maze.width, self.maze.height)
-        self.draw_text("Maze Size:", self.mono_font, (40, 40, 40), (col1_x, cursor_y), anchor="topleft", shadow=False)
-        self.draw_text(f"{self.maze.width} x {self.maze.height}", self.mono_font, (0, 0, 0), (col2_x, cursor_y), anchor="topleft", shadow=False)
-        
-        cursor_y += row_h + 10
-        self.draw_text(f"Grid Size (n) = {n_val}, Total Nodes ≈ {n_val**2}", self.mono_font, (20, 100, 20), (col1_x, cursor_y), anchor="topleft", shadow=False)
-        cursor_y += row_h
-        self.draw_text("DFS explores most nodes in worst case.", self.small_font, (80, 80, 80), (col1_x, cursor_y), anchor="topleft", shadow=False)
-        
-        cursor_y += 35
-        
-        # 2. WHY BACKTRACKING INCREASED RUNTIME
-        self.draw_text("2. Why Backtracking Increased Runtime", self.medium_font, (0, 0, 0), (x_start + margin_x, cursor_y), anchor="topleft", shadow=False)
-        cursor_y += 30
-        
-        box_rect = pygame.Rect(x_start + margin_x, cursor_y, analysis_w - margin_x*2, 80)
-        pygame.draw.rect(self.screen, (245, 245, 250), box_rect)
-        pygame.draw.rect(self.screen, (180, 180, 200), box_rect, 1)
-        
-        expl_lines = [
-            "- Deep branches → More stack operations",
-            "- More dead ends → More retracing backwards",
-            "- Retracing → Additional step cost scaling with depth"
-        ]
-        
-        ty = cursor_y + 10
-        for line in expl_lines:
-            self.draw_text(line, self.small_font, (40, 40, 40), (x_start + margin_x + 10, ty), anchor="topleft", shadow=False)
-            ty += 22
-            
-        cursor_y += 95
-        
-        # 3. BIG O
-        self.draw_text("3. Theoretical Complexity", self.medium_font, (0, 0, 0), (x_start + margin_x, cursor_y), anchor="topleft", shadow=False)
-        cursor_y += 30
-        
-        self.draw_text("DFS Time Complexity: O(V + E)", self.mono_font, (0, 0, 0), (x_start + margin_x, cursor_y), anchor="topleft", shadow=False)
-        cursor_y += 20
-        self.draw_text(f"For Grid: V ≈ n\u00B2, E ≈ 4n\u00B2", self.mono_font, (0, 0, 0), (x_start + margin_x, cursor_y), anchor="topleft", shadow=False)
-        cursor_y += 20
-        self.draw_text("Therefore -> O(n\u00B2)", self.large_font, (200, 50, 50), (x_start + margin_x, cursor_y), anchor="topleft", shadow=False)
-        cursor_y += 35
-        self.draw_text("Observed growth matches quadratic behavior.", self.font, (80, 80, 80), (x_start + margin_x, cursor_y), anchor="topleft", shadow=False)
-        cursor_y += 35
-        
-        # 4. CHART WITH RED HIGHLIGHTS
-        graph_y = cursor_y
-        graph_h = 130
-        graph_w = analysis_w - margin_x * 2 - 20
-        
-        pygame.draw.line(self.screen, (100, 100, 100), (col1_x, graph_y), (col1_x, graph_y + graph_h), 2) # Y-Axis
-        pygame.draw.line(self.screen, (100, 100, 100), (col1_x, graph_y + graph_h), (col1_x + graph_w + 20, graph_y + graph_h), 2) # X-Axis
-        
-        self.draw_text("Nodes", self.small_font, (100, 100, 100), (col1_x + 5, graph_y - 10), anchor="topleft", shadow=False)
-        self.draw_text("Steps", self.small_font, (100, 100, 100), (col1_x + graph_w - 30, graph_y + graph_h + 10), anchor="topleft", shadow=False)
-        
-        if len(metrics) > 1:
-            max_step = metrics[-1]['step']
-            max_y = max(m['nodes'] for m in metrics)
-            if max_y == 0: max_y = 1 
-            
-            points = []
-            for m in metrics:
-                px = col1_x + (m['step'] / max_step) * graph_w
-                py = graph_y + graph_h - (m['nodes'] / max_y) * graph_h
-                points.append((px, py))
-                
-            pygame.draw.lines(self.screen, (30, 80, 200), False, points, 3) # Blue line
-            
-            # Draw markers
-            selected_idx = getattr(self, 'complexity_highlight_index', 0)
-            bt_count = 0
-            for i, m in enumerate(metrics):
-                if m.get('state') == 'BACKTRACK':
-                    px = col1_x + (m['step'] / max_step) * graph_w
-                    py = graph_y + graph_h - (m['nodes'] / max_y) * graph_h
-                    
-                    if bt_count == selected_idx:
-                        # Massive highlight targeted
-                        pygame.draw.circle(self.screen, (255, 0, 0, 100), (int(px), int(py)), 12)
-                        pygame.draw.circle(self.screen, (255, 30, 30), (int(px), int(py)), 6)
-                        
-                        # Pointer line
-                        pygame.draw.line(self.screen, (100, 100, 100), (px, py - 40), (px, py), 1)
-                        self.draw_text(f"Spike #{selected_idx+1}", self.small_font, (200, 0, 0), (px, py - 45), shadow=False)
-                    else:
-                        # Regular red dot
-                        pygame.draw.circle(self.screen, (220, 30, 30), (int(px), int(py)), 3)
-                    
-                    bt_count += 1
-            
-        cursor_y = graph_y + graph_h + 35
-        self.draw_text("* Slope increases when deep branches explored.", self.small_font, (100, 100, 100), (col1_x, cursor_y), anchor="topleft", shadow=False)
-        cursor_y += 18
-        self.draw_text("* Backtracking adds extra traversal cost.", self.small_font, (100, 100, 100), (col1_x, cursor_y), anchor="topleft", shadow=False)
-        
-        cursor_y += 40
-        
-        # 5. FINAL RESULT
-        summary_rect = pygame.Rect(x_start + 40, cursor_y, analysis_w - 80, 100)
-        pygame.draw.rect(self.screen, (25, 25, 40), summary_rect, border_radius=8)
-        
-        self.draw_text("FINAL RESULT:", self.font, (200, 200, 255), (x_start + analysis_w//2, cursor_y + 20), shadow=False)
-        self.draw_text("Maze Structure: Tree-like | Traversal: DFS", self.small_font, (255, 255, 255), (x_start + analysis_w//2, cursor_y + 45), shadow=False)
-        self.draw_text("Observed Growth: Quadratic -> Conclusion: O(n\u00B2)", self.font, (150, 255, 150), (x_start + analysis_w//2, cursor_y + 70), shadow=False)
 
     def draw_replay(self):
         w, h = self.screen.get_size()
